@@ -1,21 +1,30 @@
 using System.Collections;
 using System.Collections.Generic;
 using TMPro;
+using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.HID;
+using UnityEngine.SceneManagement;
 
 
 public class GameController : MonoBehaviour
 {
     [SerializeField] GameObject[] dogs;
     [SerializeField] GameObject[] foods;
+    [SerializeField] float[] foodDefaultScale;
+    [SerializeField] GameObject cam;
     [SerializeField] TextMeshProUGUI foodSelected;
-
+    [SerializeField] TextMeshProUGUI dogComment;
+    [SerializeField] float hungerInterval;
+    private GameObject activeDog;
+    private Animator dogAnim;
 
     public string playerName;
     public int dogIndex;
     public string activeFood;
     public bool isFoodSelected;
+    public bool gameEnded;
 
     Camera m_Camera;
 
@@ -24,39 +33,72 @@ public class GameController : MonoBehaviour
         m_Camera = Camera.main;
     }
 
-    // Start is called before the first frame update
     void Start()
     {
-        playerName = MenuHandler.Instance.playerName;
-        dogIndex = MenuHandler.Instance.dogSelectedIndex;
-        dogs[dogIndex].SetActive(true);
+        InitGame();
     }
 
     void Update()
     {
-        CheckForFoodClick();
+        if (Input.GetMouseButtonDown(0) && !gameEnded)
+        {
+            CheckForFoodClick();
+        }
+    }
+
+    void InitGame()
+    {
+        playerName = MenuHandler.Instance.playerName;
+        dogIndex = MenuHandler.Instance.dogSelectedIndex;
+        activeDog = dogs[dogIndex];
+        activeDog.SetActive(true);
+        dogAnim = activeDog.GetComponent<Animator>();
+        dogAnim.SetFloat("Speed_f", 0);
+        dogComment.text = "Hi " + playerName + ", I'm hungry.";
+        InvokeRepeating("GetHungry", hungerInterval, hungerInterval);
+    }
+
+    public void RestartGame()
+    {
+        Destroy(GameObject.Find("Hunger Controller"));
+        SceneManager.LoadScene(0);
     }
 
     void CheckForFoodClick()
     {
         GameObject objectClicked;
-        Mouse mouse = Mouse.current;
-        if (mouse.leftButton.wasPressedThisFrame)
+        Ray ray = m_Camera.ScreenPointToRay(Input.mousePosition);
+        if (Physics.Raycast(ray, out RaycastHit hit))
         {
-            Vector3 mousePosition = mouse.position.ReadValue();
-            Ray ray = m_Camera.ScreenPointToRay(mousePosition);
-            if (Physics.Raycast(ray, out RaycastHit hit))
+            objectClicked = hit.transform.gameObject;
+            if (objectClicked.CompareTag("Food"))
             {
-                objectClicked = hit.transform.gameObject;
-                if (objectClicked.CompareTag("Food"))
+                ResetFood();
+                objectClicked.transform.localScale *= 1.2f;
+                FoodSelected(objectClicked.name);
+            }
+            if (objectClicked.CompareTag("Dog") && isFoodSelected && !HungerController.Instance.isEating)
+            {
+                foodSelected.text = "";
+                isFoodSelected = false;
+                if (activeFood == "Energy Can")
                 {
-                    FoodSelected(objectClicked.name);
+                    EnergyBoost();
                 }
-                if (objectClicked.CompareTag("Dog") && isFoodSelected)
+                else
                 {
-                    DogSelected();
+                    ResetFood();
+                    HungerController.Instance.FoodReceived(activeFood);
                 }
             }
+        }
+    }
+
+    void ResetFood()
+    {
+        for (int i = 0; i < foods.Length; i++)
+        {
+            foods[i].transform.localScale = new Vector3(foodDefaultScale[i], foodDefaultScale[i], foodDefaultScale[i]);
         }
     }
 
@@ -67,8 +109,22 @@ public class GameController : MonoBehaviour
         isFoodSelected = true;
     }
 
-    public void DogSelected()
+    void GetHungry()
     {
-        Debug.Log("Thank you for the " + activeFood);
+        if (!gameEnded)
+        {
+            HungerController.Instance.DecreaseLevel();
+        }
+    }
+
+    void EnergyBoost()
+    {
+        Rigidbody dogRb;
+        dogComment.text = "Oops, that was not a good idea.";
+        foodSelected.text = "Game Over";
+        dogAnim.SetFloat("Speed_f", 1);
+        dogRb = activeDog.GetComponent<Rigidbody>();
+        dogRb.velocity = Vector3.forward;
+        gameEnded = true;
     }
 }
